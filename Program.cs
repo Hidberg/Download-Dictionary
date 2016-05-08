@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Net.Http;
 using Newtonsoft.Json;
 using System.IO;
+using System.Diagnostics;
 
 namespace JSON_Deserialize
 {
@@ -14,9 +15,25 @@ namespace JSON_Deserialize
         static void Main(string[] args)
         {
             int count = 0;
-            int i = 1;
-            StreamWriter file = new StreamWriter("file.txt", true);
-            while (count < 1000000000)
+            int ticket = 0;
+            string txtFromFile = "";
+            try
+            {
+                StreamReader config = new StreamReader("json_config.txt");
+                txtFromFile = config.ReadLine();
+            }
+            catch (Exception)
+            {
+                Console.WriteLine("File doesnt exist. Need to be with exe file.");
+                Environment.Exit(1);
+            }
+            string[] values = txtFromFile.Split(new char[] {' '}, StringSplitOptions.RemoveEmptyEntries);
+            int i = Convert.ToInt32(values[0]);
+            int condition = Convert.ToInt32(values[1]);
+            StreamWriter file = new StreamWriter("json_result.txt", true);
+            Stopwatch stopWatch = new Stopwatch();
+            stopWatch.Start();
+            while (count < condition)
             {
                 System.Uri uri = new Uri(string.Format("https://hola.org/challenges/word_classifier/testcase/{0}", i++));
                 HttpClient client = new HttpClient();
@@ -27,6 +44,7 @@ namespace JSON_Deserialize
                 {
                     while(response == "Rate limit exceeded")
                     {
+                        ++ticket;
                         System.Threading.Thread.Sleep(1000);
                         response = client.GetStringAsync(uri).Result;
                     }
@@ -42,8 +60,15 @@ namespace JSON_Deserialize
                         ;
                     }
                 }
+                else
+                {
+                    ++ticket;
+                }
                 client.Dispose();
             }
+            Console.WriteLine(ticket);
+            stopWatch.Stop();
+            Console.WriteLine(((stopWatch.ElapsedMilliseconds) / (1000)).ToString());
             file.Dispose();
         }
     }

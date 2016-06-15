@@ -15,76 +15,80 @@ namespace JSON_Deserialize
 {
     class Program
     {
-        static int countQuery = 254200; // 10 000 000 запросов это 1млрд строк. 254200 запросов это Сереги для проверки(25,42 млн)
-        static ConcurrentDictionary<int, string> data = new ConcurrentDictionary<int, string>();
+        static volatile int countQuery; // 10 000 000 запросов это 1млрд строк. 254200 запросов это Сереги для проверки(25,42 млн)
         static int queryOnThread;
-        static int currentQuery = 0;
+        static int currentQuery;
+        static ConcurrentDictionary<int, string> data = new ConcurrentDictionary<int, string>();
+        static ConcurrentQueue<string> logMessages = new ConcurrentQueue<string>();
+        static bool allLogsInQueue = false;
+        static Stopwatch timer;
+        static AutoResetEvent readyToStop = new AutoResetEvent(false);
+        //static AutoResetEvent readyToDownload = new AutoResetEvent(false);
+        static initialParams parametrs;
 
         static void Main(string[] args)
         {
-            string txtFromFile = "";
+            int maxThreadsAllowed = 0;
+            bool ok = true;
             try
             {
                 using (StreamReader config = new StreamReader("json_config.txt"))
                 {
-                    txtFromFile = config.ReadLine();
+                    parametrs = JsonConvert.DeserializeObject<initialParams>(config.ReadToEnd());
                 }
+                maxThreadsAllowed = parametrs.maxThreadsAllowed;
+                currentQuery = parametrs.currentQuery;
+                countQuery = parametrs.countQuery;
             }
             catch (Exception)
             {
-                Console.WriteLine("File doesnt exist. Need to be with exe file.");
-                Environment.Exit(1);
+                Console.WriteLine("Файл json_config.txt не найден или в нем некорректные значения!");
+                ok = false;
             }
-
-            Stopwatch stopWatch = new Stopwatch();
-            stopWatch.Start();
-
-            int maxThreadsAllowed = Convert.ToInt32(txtFromFile);
-            Thread[] Threads = new Thread[maxThreadsAllowed];
-            queryOnThread = countQuery / maxThreadsAllowed;
-
-            for (int i = 0; i < maxThreadsAllowed; ++i)
+            if (ok)
             {
-                Threads[i] = new Thread(GetDataFromServer);
-                Threads[i].Start();
-            }
-            using (StreamWriter file = new StreamWriter("result.txt", true))
-            {
-                file.NewLine = "\n";
-                Console.WriteLine("Программа запущена...");
-                for (int i = 1; i <= countQuery;)
+                timer = new Stopwatch();
+                timer.Start();
+
+                Thread[] Threads = new Thread[maxThreadsAllowed];
+                queryOnThread = countQuery / maxThreadsAllowed;
+
+                Thread dataWriter = new Thread(WriteToFile);
+                dataWriter.Start();
+
+                for (int i = 0; i < maxThreadsAllowed; ++i)
                 {
-                    string content;
+                    Threads[i] = new Thread(GetDataFromServer);
+                    Threads[i].Start();
+                }
+                Thread logWriter = new Thread(WriteLog);
+                logWriter.Start();
 
-                    if (data.TryRemove(i, out content))
+                string comand;
+                while (currentQuery < countQuery)
+                {
+                    comand = Console.ReadLine();
+                    if (comand == "stop")
                     {
-                        StringBuilder mutableContent = new StringBuilder(content);
-                        mutableContent = mutableContent.Replace("\"", "").Replace("{\n ", "").Replace("}", "").Replace(" ", "").Replace(",", "").Replace(":true", " 1").Replace(":false", " 0");
-                        file.Write(mutableContent.ToString());
-                        file.Flush();
-                        if (i % 10 == 0)
-                        {
-                            Console.WriteLine("Выполнено '{0}' запросов, записано '{1}' строк", i, i * 100);
-                        }
-                        ++i;
-                    }
-                    else
-                    {
-                        System.Threading.Thread.Sleep(100); 
+                        countQuery = currentQuery;
                     }
                 }
+                readyToStop.WaitOne();
             }
-            stopWatch.Stop();
-            Console.WriteLine(((stopWatch.ElapsedMilliseconds) / 1000 ).ToString());
         }
 
         static void GetDataFromServer()
         {
+            int localCurrentQuery = 0;
+            //readyToDownload.WaitOne();
             while (currentQuery < countQuery)
             {
                 try
                 {
-                    int localCurrentQuery = Interlocked.Increment(ref currentQuery); // здесь ошибка
+                    if (localCurrentQuery == 0)
+                    {
+                        localCurrentQuery = Interlocked.Increment(ref currentQuery);
+                    }
                     HttpWebRequest http = WebRequest.CreateHttp("https://hola.org/challenges/word_classifier/testcase/" + localCurrentQuery);
                     using (HttpWebResponse response = (HttpWebResponse)http.GetResponse())
                     {
@@ -95,23 +99,92 @@ namespace JSON_Deserialize
                                 string content = sr.ReadToEnd();
                                 while (!data.TryAdd(localCurrentQuery, content))
                                 {
-                                    Console.WriteLine("Shit happens! TryAdd return false.");
+                                    logMessages.Enqueue("Shit happens! TryAdd return false.");
                                 }
+                                localCurrentQuery = 0;
                             }
                         }
                         else
                         {
-                            Console.WriteLine("Запрос '{0}' вернул код '{1}'", localCurrentQuery, response.StatusCode);
+                            logMessages.Enqueue(string.Format("Запрос '{0}' вернул код '{1}'", localCurrentQuery, response.StatusCode));
                         }
                     }
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
-                    Console.WriteLine("Error when getting data from client");
-                    Console.WriteLine(e.ToString());
-                    System.Threading.Thread.Sleep(10000);
+                    logMessages.Enqueue("Error when getting data from client" + e.ToString());
+                    System.Threading.Thread.Sleep(5000);
                 }
             }
         }
+
+        static void WriteLog()
+        {
+            using (StreamWriter logFile = new StreamWriter("log.log"))
+            {
+                string logMessage;
+                while (!allLogsInQueue || !logMessages.IsEmpty)
+                {
+                    if (logMessages.TryDequeue(out logMessage))
+                    {
+                        logFile.WriteLine(logMessage);
+                        logFile.Flush();
+                    }
+                    else
+                    {
+                        System.Threading.Thread.Sleep(100);
+                    }
+                }
+            }
+            readyToStop.Set();
+        }
+
+        static void WriteToFile()
+        {
+            int a = currentQuery + 1;
+            //readyToDownload.Set();
+            using (StreamWriter file = new StreamWriter("result.txt", true))
+            {
+                file.NewLine = "\n";
+                logMessages.Enqueue("Программа запущена...");
+                for (; a <= countQuery;)
+                {
+                    string content;
+                    if (data.TryRemove(a, out content))
+                    {
+                        StringBuilder mutableContent = new StringBuilder(content);
+                        mutableContent = mutableContent.Replace("\"", "").Replace("{\n ", "").Replace("}", "").Replace(" ", "").Replace(",", "").Replace(":true", " 1").Replace(":false", " 0");
+                        file.Write(mutableContent.ToString());
+                        file.Flush();
+                        if (a % 10 == 0)
+                        {
+                            logMessages.Enqueue(string.Format("Выполнено '{0}' запросов, записано '{1}' строк", a, a * 100));
+                        }
+                        ++a;
+                    }
+                    else
+                    {
+                        System.Threading.Thread.Sleep(100);
+                    }
+                }
+                using (StreamWriter config = new StreamWriter("json_config.txt"))
+                {
+                    parametrs.currentQuery = countQuery;
+                    config.WriteLine(JsonConvert.SerializeObject(parametrs));
+                    config.Flush();
+                }
+                timer.Stop();
+                Console.WriteLine("Программа завершена, время работы '{0}' мс", timer.ElapsedMilliseconds.ToString());
+                logMessages.Enqueue(string.Format("Программа завершена, время работы '{0}' мс", timer.ElapsedMilliseconds.ToString()));
+                allLogsInQueue = true;
+            }
+        }
+    }
+
+    class initialParams
+    {
+        public int maxThreadsAllowed;
+        public int currentQuery;
+        public int countQuery;
     }
 }

@@ -1,0 +1,1 @@
+{"maxThreadsAllowed":20,"currentQuery":100,"countQuery":100}

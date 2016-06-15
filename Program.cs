@@ -1,9 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
-using System.Net.Http;
 using Newtonsoft.Json;
 using System.IO;
 using System.Diagnostics;
@@ -23,7 +19,7 @@ namespace JSON_Deserialize
         static bool allLogsInQueue = false;
         static Stopwatch timer;
         static AutoResetEvent readyToStop = new AutoResetEvent(false);
-        //static AutoResetEvent readyToDownload = new AutoResetEvent(false);
+        static AutoResetEvent readyToDownload = new AutoResetEvent(false);
         static initialParams parametrs;
 
         static void Main(string[] args)
@@ -56,6 +52,7 @@ namespace JSON_Deserialize
                 Thread dataWriter = new Thread(WriteToFile);
                 dataWriter.Start();
 
+                readyToDownload.WaitOne();
                 for (int i = 0; i < maxThreadsAllowed; ++i)
                 {
                     Threads[i] = new Thread(GetDataFromServer);
@@ -80,7 +77,6 @@ namespace JSON_Deserialize
         static void GetDataFromServer()
         {
             int localCurrentQuery = 0;
-            //readyToDownload.WaitOne();
             while (currentQuery < countQuery)
             {
                 try
@@ -142,7 +138,7 @@ namespace JSON_Deserialize
         static void WriteToFile()
         {
             int a = currentQuery + 1;
-            //readyToDownload.Set();
+            readyToDownload.Set();
             using (StreamWriter file = new StreamWriter("result.txt", true))
             {
                 file.NewLine = "\n";

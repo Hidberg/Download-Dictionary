@@ -1,7 +1,0 @@
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\bin\Debug\JSON_Deserialize.exe.config
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\bin\Debug\JSON_Deserialize.exe
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\bin\Debug\JSON_Deserialize.pdb
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\obj\Debug\JSON_Deserialize.csprojResolveAssemblyReference.cache
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\obj\Debug\JSON_Deserialize.exe
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\obj\Debug\JSON_Deserialize.pdb
-D:\My Solutions\ConsoleApplication2\JSON_Deserialize\bin\Debug\Newtonsoft.Json.dll
